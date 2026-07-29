@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OTT QoE Demo — Bitmovin</title>
+<script src="https://cdn.bitmovin.com/player/web/8/bitmovinplayer.js"></script>
+<script src="https://cdn.bitmovin.com/analytics/web/2/bitmovin-analytics.js"></script>
+<link href="https://cdn.bitmovin.com/player/web/8/bitmovinplayer-ui.css" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0e12;
+    --panel: #16181f;
+    --panel-2: #1d2028;
+    --border: #262a35;
+    --text: #eef0f4;
+    --muted: #8b91a1;
+    --accent: #ff5a1f;   
+    --accent-2: #ff8248;
+    --good: #38d996;
+    --bad: #ff5c72;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  header {
+    padding: 22px 28px 18px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #14151a 0%, #0d0e12 100%);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header .brand { display: flex; align-items: center; gap: 10px; }
+  header .brand .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.2px; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
+  header .pill {
+    font-size: 11px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    background: var(--panel);
+  }
+
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 28px 60px;
+  }
+
+  #player-shell {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+  }
+  #player {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+  }
+  #status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--panel-2);
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  #status-bar .now {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  #status-bar .now b { color: var(--text); font-weight: 600; }
+  #status-bar .tag {
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    background: rgba(255, 90, 31, 0.12);
+    color: var(--accent-2);
+    border: 1px solid rgba(255, 90, 31, 0.3);
+  }
+
+  .section-title {
+    margin: 32px 0 14px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .section-title h2 { font-size: 14px; margin: 0; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; }
+  .section-title span { font-size: 12px; color: var(--muted); }
+
+  #catalog {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+    position: relative;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-3px); }
+  .card.active {
+    border-color: var(--accent);
+    background: linear-gradient(180deg, rgba(255,90,31,0.10), rgba(255,90,31,0.02));
+  }
+  .card .thumb {
+    height: 84px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    background: var(--thumb, linear-gradient(135deg,#2a2f3d,#12141a));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    color: rgba(255,255,255,0.55);
+  }
+  .card .badge {
+    display: inline-block;
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 5px;
+    background: #232838;
+    color: #9aa5c0;
+    margin-bottom: 6px;
+    letter-spacing: 0.3px;
+  }
+  .card .badge.abr { background: rgba(56, 217, 150, 0.12); color: var(--good); }
+  .card .title { font-size: 13px; font-weight: 500; line-height: 1.3; }
+  .card .src { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .card .playing-mark {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    display: none;
+  }
+  .card.active .playing-mark { display: block; }
+
+  footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  footer code {
+    background: var(--panel-2);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--accent-2);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="dot"></div>
+    <div>
+      <h1>OTT QoE Demo — Bitmovin Catalog</h1>
+    </div>
+  </div>
+  <div class="pill" id="engine-pill">Bitmovin Player v8</div>
+</header>
+
+
+
+<main>
+  <div id="player-shell">
+    <div id="player"></div>
+    <div id="status-bar">
+      <div class="now" id="now-playing">Loading…</div>
+      <div class="tag" id="qoe-tag">QoE tracking</div>
+    </div>
+  </div>
+
+  <div class="section-title">
+    <h2>Video Catalog</h2>
+    <span id="count-label">10 сурвалж</span>
+  </div>
+
+  <div id="catalog"></div>
+</main>
+
+<script>
+  const PLAYER_KEY = 'YOUR_PLAYER_KEY';    
+  const ANALYTICS_KEY = 'YOUR_ANALYTICS_KEY'; 
+
+  const config = {
+    key: PLAYER_KEY,
+    analytics: {
+      key: ANALYTICS_KEY,
+    }
+  };
+
+  const catalog = [
+    {
+      id: 'demo-abr-001',
+      title: 'Mux — x36xhzz',
+      src: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+      icon: '▶',
+    },
+    {
+      id: 'demo-abr-002',
+      title: 'Mux — PTS Shift',
+      src: 'https://test-streams.mux.dev/pts_shift/master.m3u8',
+      icon: '▶',
+    },
+    {
+      id: 'demo-abr-003',
+      title: 'Apple — BipBop (basic)',
+      src: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_4x3/bipbop_4x3_variant.m3u8',
+      icon: '🍎',
+    },
+    {
+      id: 'demo-abr-004',
+      title: 'Apple — BipBop Advanced (fMP4)',
+      src: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
+      icon: '🍎',
+    },
+    {
+      id: 'demo-abr-005',
+      title: 'Unified Streaming — Tears of Steel',
+      src: 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
+      icon: '🎬',
+    },
+    {
+      id: 'demo-abr-006',
+      title: 'Bitmovin — Art of Motion',
+      src: 'https://cdn.bitmovin.com/content/assets/art-of-motion-dash-hls-progressive/m3u8s/f08e80da-bf1d-4e3d-8899-f0f6155f6efa.m3u8',
+      icon: '🏂',
+    },
+    {
+      id: 'demo-abr-007',
+      title: 'Akamai/Bitdash — Sintel',
+      src: 'https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8',
+      icon: '🎞',
+    },
+    {
+      id: 'demo-abr-008',
+      title: 'Vodobox — Skate Phantom Flex 4K',
+      src: 'https://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8',
+      icon: '🛹',
+    },
+    {
+      id: 'demo-abr-009',
+      title: 'JW Player — Wowza Adaptive',
+      src: 'https://playertest.longtailvideo.com/adaptive/wowzaid3/playlist.m3u8',
+      icon: '📺',
+    },
+    {
+      id: 'demo-abr-010',
+      title: 'Blender Open Movies — Live Test',
+      src: 'https://ireplay.tv/test/blender.m3u8',
+      icon: '🌀',
+    },
+  ];
+
+  document.getElementById('count-label').textContent = catalog.length + ' сурвалж';
+
+  const playerContainer = document.getElementById('player');
+  const nowPlaying = document.getElementById('now-playing');
+  const qoeTag = document.getElementById('qoe-tag');
+  const player = new bitmovin.player.Player(playerContainer, config);
+
+  function loadVideo(item, cardEl) {
+    qoeTag.textContent = 'Ачаалж байна…';
+
+    const source = {
+      title: item.title,
+      hls: item.src,
+      metadata: {
+        videoId: item.id,
+        title: item.title,
+      },
+    };
+
+    player.load(source).then(
+      () => {
+        qoeTag.textContent = 'QoE tracking';
+        player.play().catch(() => {});
+      },
+      () => {
+        qoeTag.textContent = 'Error';
+      }
+    );
+
+    nowPlaying.innerHTML = 'Now playing: <b>' + item.title + '</b>';
+
+    document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+    if (cardEl) cardEl.classList.add('active');
+  }
+
+  const catalogEl = document.getElementById('catalog');
+  const gradients = [
+    'linear-gradient(135deg,#ff5a1f33,#12141a)',
+    'linear-gradient(135deg,#4d7cff33,#12141a)',
+    'linear-gradient(135deg,#38d99633,#12141a)',
+    'linear-gradient(135deg,#ff5c7233,#12141a)',
+    'linear-gradient(135deg,#f6c94533,#12141a)',
+  ];
+
+  catalog.forEach((item, idx) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.setProperty('--thumb', gradients[idx % gradients.length]);
+    card.innerHTML =
+      '<div class="playing-mark"></div>' +
+      '<div class="thumb">' + item.icon + '</div>' +
+      '<div class="badge abr">HLS / ABR</div>' +
+      '<div class="title">' + item.title + '</div>' +
+      '<div class="src">' + new URL(item.src).hostname + '</div>';
+    card.addEventListener('click', () => loadVideo(item, card));
+    catalogEl.appendChild(card);
+  });
+
+  loadVideo(catalog[0], catalogEl.children[0]);
+</script>
+
+</body>
+</html>

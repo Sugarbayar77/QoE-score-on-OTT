@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OTT QoE Demo — Mux Data</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="https://src.litix.io/core/4/mux.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0b0d12;
+    color: #eaeaea;
+  }
+  header {
+    padding: 20px 24px;
+    border-bottom: 1px solid #1f232c;
+  }
+  header h1 { margin: 0 0 4px; font-size: 20px; }
+  header p { margin: 0; color: #8a8f9c; font-size: 13px; }
+
+  #player-wrap {
+    padding: 20px 24px 8px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  video {
+    width: 100%;
+    background: #000;
+    border-radius: 8px;
+    display: block;
+  }
+  #now-playing {
+    margin: 10px 0 0;
+    font-size: 14px;
+    color: #b7bcc9;
+  }
+  #now-playing b { color: #fff; }
+
+  #catalog {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+    padding: 16px 24px 32px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .card {
+    background: #161a22;
+    border: 1px solid #232838;
+    border-radius: 8px;
+    padding: 10px;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.15s;
+  }
+  .card:hover { border-color: #4d7cff; transform: translateY(-2px); }
+  .card.active { border-color: #4d7cff; background: #182036; }
+  .card .badge {
+    display: inline-block;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #2a3040;
+    color: #9aa5c0;
+    margin-bottom: 6px;
+  }
+  .card .badge.abr { background: #14361f; color: #6fe08c; }
+  .card .title { font-size: 13px; line-height: 1.3; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>OTT QoE Demo — Video Catalog</h1>
+  <p>Видео сонгоход player дээр тоглогдож, Mux Data руу QoE metrics (startup time, rebuffering, bitrate) real-time илгээгдэнэ.</p>
+</header>
+
+<div id="player-wrap">
+  <video id="player" controls playsinline></video>
+  <p id="now-playing">Ачааллаж байна…</p>
+</div>
+
+<div id="catalog"></div>
+
+<script>
+
+  const MUX_ENV_KEY = 'YOUR KEY'; // <-- change
+
+  const VIEWER_ID = (crypto.randomUUID ? crypto.randomUUID() :
+    'viewer-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+
+  const catalog = [
+    {
+      id: 'demo-abr-001',
+      title: 'Mux — x36xhzz',
+      src: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+      abr: true,
+    },
+    {
+      id: 'demo-abr-002',
+      title: 'Mux — PTS Shift',
+      src: 'https://test-streams.mux.dev/pts_shift/master.m3u8',
+      abr: true,
+    },
+    {
+      id: 'demo-abr-003',
+      title: 'Apple — BipBop (basic)',
+      src: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_4x3/bipbop_4x3_variant.m3u8',
+      abr: true,
+    },
+    {
+      id: 'demo-abr-004',
+      title: 'Apple — BipBop Advanced (fMP4)',
+      src: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
+      abr: true,
+    },
+    {
+      id: 'demo-abr-005',
+      title: 'Unified Streaming — Tears of Steel',
+      src: 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
+      abr: true,
+    },
+    {
+      id: 'demo-abr-006',
+      title: 'Bitmovin — Art of Motion',
+      src: 'https://d1s44q2zqog7l4.cloudfront.net//manifest.m3u8',
+      abr: true,
+    },
+    {
+      id: 'demo-abr-007',
+      title: 'Akamai/Bitdash — Sintel',
+      src: 'https://bitdash-a.akamaihd.net/content/sintel/hls/playlist.m3u8',
+      abr: true,
+    },
+    {
+      id: 'demo-abr-008',
+      title: 'Vodobox — Skate Phantom Flex 4K',
+      src: 'https://sample.vodobox.net/skate_phantom_flex_4k/skate_phantom_flex_4k.m3u8',
+      abr: true,
+    },
+    {
+      id: 'demo-abr-009',
+      title: 'JW Player — Wowza Adaptive',
+      src: 'https://playertest.longtailvideo.com/adaptive/wowzaid3/playlist.m3u8',
+      abr: true,
+    },
+    {
+      id: 'demo-abr-010',
+      title: 'Blender Open Movies — Live Test',
+      src: 'https://ireplay.tv/test/blender.m3u8',
+      abr: true,
+    },
+  ];
+
+  const video = document.getElementById('player');
+  const nowPlaying = document.getElementById('now-playing');
+  let hls = null;
+  let muxInitialized = false;
+
+  function loadVideo(item, cardEl) {
+    if (hls) {
+      hls.destroy();
+      hls = null;
+    }
+
+    if (item.abr && Hls.isSupported()) {
+      hls = new Hls();
+      hls.loadSource(item.src);
+      hls.attachMedia(video);
+    } else if (item.abr && video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = item.src; 
+    } else {
+      video.src = item.src; 
+    }
+
+    if (!muxInitialized) {
+      mux.monitor(video, {
+        debug: false,
+        data: {
+          env_key: MUX_ENV_KEY,
+          player_name: 'OTT Catalog Demo Player',
+          player_init_time: Date.now(),
+          viewer_user_id: VIEWER_ID,
+          video_id: item.id,
+          video_title: item.title,
+          video_stream_type: item.abr ? 'on-demand' : 'on-demand',
+        }
+      });
+      muxInitialized = true;
+    } else {
+      if (video.mux && typeof video.mux.emit === 'function') {
+        video.mux.emit('videochange', {
+          video_id: item.id,
+          video_title: item.title,
+          video_stream_type: item.abr ? 'on-demand' : 'on-demand',
+        });
+      }
+    }
+
+    video.play().catch(() => {
+    });
+
+    nowPlaying.innerHTML = 'Одоо тоглож байна: <b>' + item.title + '</b>' +
+      (item.abr ? ' — ABR/HLS' : ' — Progressive MP4');
+
+    document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+    if (cardEl) cardEl.classList.add('active');
+  }
+  const catalogEl = document.getElementById('catalog');
+  catalog.forEach((item) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML =
+      '<span class="badge ' + (item.abr ? 'abr' : '') + '">' +
+      (item.abr ? 'HLS / ABR' : 'MP4') + '</span>' +
+      '<div class="title">' + item.title + '</div>';
+    card.addEventListener('click', () => loadVideo(item, card));
+    catalogEl.appendChild(card);
+  });
+
+  loadVideo(catalog[0], catalogEl.children[0]);
+</script>
+
+</body>
+</html>
